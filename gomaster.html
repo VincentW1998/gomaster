@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    
+    <style>
+        body { background-color: #1a1917; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        .goban-container { background-color: #dbb06d; position: relative; box-shadow: 0 20px 50px rgba(0,0,0,0.8); border: 2px solid #8b4513; }
+        .line-v, .line-h { position: absolute; background-color: rgba(0,0,0,0.7); }
+        .hoshi { position: absolute; background-color: #000; border-radius: 50%; transform: translate(-50%, -50%); z-index: 5; }
+        .stone { position: absolute; border-radius: 50%; transform: translate(-50%, -50%); z-index: 10; transition: transform 0.1s ease-out; }
+        .stone-black { background: radial-gradient(circle at 30% 30%, #444, #000); box-shadow: 2px 3px 5px rgba(0,0,0,0.5); }
+        .stone-white { background: radial-gradient(circle at 30% 30%, #fff, #bbb); box-shadow: 2px 3px 5px rgba(0,0,0,0.4); }
+        .marker { position: absolute; width: 35%; height: 35%; border: 2px solid #ff4b4b; border-radius: 50%; top: 32.5%; left: 32.5%; }
+        
+        .territory-marker { 
+            position: absolute; 
+            transform: translate(-50%, -50%); 
+            width: 3%; 
+            height: 3%; 
+            z-index: 6; 
+            opacity: 0.85; 
+            border-radius: 2px;
+        }
+        .territory-marker-black {
+            background-color: #000;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        }
+        .territory-marker-white {
+            background-color: #fff;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            border: 1px solid rgba(0,0,0,0.15);
+        }
+        
+        .click-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 20; display: grid; }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .ko-warning {
+            animation: shake 0.3s ease-in-out;
+        }
+        
+        .pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useEffect, useRef } = React;
+
+        // Firebase Configuration - REMPLACEZ PAR VOS PROPRES CREDENTIALS
+        const firebaseConfig = {
+            apiKey: "AIzaSyAeQmAqBS5Qr_qFlgWVLskVdCM7ZpK1Po0",
+            authDomain: "gomaster-online.firebaseapp.com",
+            databaseURL: "https://gomaster-online-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "gomaster-online",
+            storageBucket: "gomaster-online.firebasestorage.app",
+            messagingSenderId: "141900806830",
+            appId: "1:141900806830:web:dfc36705f535314745cb3f"
+        };
+
+        // Initialize Firebase
+        let firebaseApp, database;
+        try {
+            firebaseApp = firebase.initializeApp(firebaseConfig);
+            database = firebase.database();
+        } catch (error) {
+            console.log("Firebase not configured:", error);
+        }
+
+        const createEmptyBoard = (size) => {
+            return Array(size).fill(null).map(() => Array(size).fill(null));
+        };
+
+        const boardToFirebase = (board) => {
+            if (!board) return null;
+            const obj = {};
+            board.forEach((row, i) => {
+                row.forEach((cell, j) => {
+                    const key = `x${i}y${j}`;
+                    if (cell !== null) {
+                        obj[key] = cell;
+                    }
+                });
+            });
+            return Object.keys(obj).length > 0 ? obj : null;
+        };
+
+        const firebaseToBoard = (firebaseObj, size) => {
+            const board = createEmptyBoard(size);
+            if (!firebaseObj) return board;
+            
+            Object.keys(firebaseObj).forEach(key => {
+                const match = key.match(/x(\d+)y(\d+)/);
+                if (match) {
+                    const i = parseInt(match[1]);
+                    const j = parseInt(match[2]);
+                    if (i < size && j < size) {
+                        board[i][j] = firebaseObj[key];
+                    }
+                }
+            });
+            return board;
+        };
+
+        const GoApp = () => {
+            const [size, setSize] = useState(19);
+            const [board, setBoard] = useState(createEmptyBoard(19));
+            const [previousBoard, setPreviousBoard] = useState(null);
+            const [turn, setTurn] = useState('B');
+            const [captures, setCaptures] = useState({ B: 0, W: 0 });
+            const [lastMove, setLastMove] = useState(null);
+            const [passCount, setPassCount] = useState(0);
+            const [gameOver, setGameOver] = useState(false);
+            const [scoreInfo, setScoreInfo] = useState(null);
+            const [territoryMap, setTerritoryMap] = useState(null);
+            const [koWarning, setKoWarning] = useState(false);
+
+            const [gameMode, setGameMode] = useState('menu');
+            const [roomId, setRoomId] = useState('');
+            const [inputRoomId, setInputRoomId] = useState('');
+            const [playerColor, setPlayerColor] = useState(null);
+            const [isConnected, setIsConnected] = useState(false);
+            const [opponentConnected, setOpponentConnected] = useState(false);
+            const gameRef = useRef(null);
+
+            const KOMI = 6.5;
+            const cellSize = 100 / (size + 1);
+
+            const generateRoomId = () => {
+                return Math.random().toString(36).substring(2, 8).toUpperCase();
+            };
+
+            const createOnlineGame = () => {
+                if (!database) {
+                    alert('Firebase n\'est pas configuré! Veuillez ajouter vos identifiants Firebase.');
+                    return;
+                }
+
+                const newRoomId = generateRoomId();
+                const initialBoard = createEmptyBoard(size);
+                
+                setRoomId(newRoomId);
+                setPlayerColor('B');
+                setGameMode('online');
+                setIsConnected(true);
+                setBoard(initialBoard);
+                setTurn('B');
+                setCaptures({ B: 0, W: 0 });
+                setLastMove(null);
+                setPassCount(0);
+                setPreviousBoard(null);
+
+                gameRef.current = database.ref('games/' + newRoomId);
+                gameRef.current.set({
+                    board: boardToFirebase(initialBoard),
+                    previousBoard: null,
+                    turn: 'B',
+                    captures: { B: 0, W: 0 },
+                    lastMove: null,
+                    passCount: 0,
+                    size: size,
+                    gameOver: false,
+                    scoreInfo: null,
+                    territoryMap: null,
+                    players: {
+                        black: true,
+                        white: false
+                    },
+                    createdAt: Date.now()
+                });
+
+                gameRef.current.child('players/white').on('value', (snapshot) => {
+                    setOpponentConnected(snapshot.val() === true);
+                });
+
+                listenToGameUpdates(newRoomId);
+            };
+
+            const joinOnlineGame = (roomIdToJoin) => {
+                if (!database) {
+                    alert('Firebase n\'est pas configuré! Veuillez ajouter vos identifiants Firebase.');
+                    return;
+                }
+
+                if (!roomIdToJoin) {
+                    alert('Veuillez entrer un code de partie!');
+                    return;
+                }
+
+                gameRef.current = database.ref('games/' + roomIdToJoin);
+                
+                gameRef.current.once('value', (snapshot) => {
+                    if (snapshot.exists()) {
+                        const gameData = snapshot.val();
+                        if (!gameData.players.white) {
+                            setRoomId(roomIdToJoin);
+                            setPlayerColor('W');
+                            setGameMode('online');
+                            setIsConnected(true);
+                            setOpponentConnected(true);
+
+                            gameRef.current.child('players/white').set(true);
+                            
+                            const boardSize = gameData.size || 19;
+                            setSize(boardSize);
+                            setBoard(firebaseToBoard(gameData.board, boardSize));
+                            setPreviousBoard(gameData.previousBoard ? firebaseToBoard(gameData.previousBoard, boardSize) : null);
+                            setTurn(gameData.turn || 'B');
+                            setCaptures(gameData.captures || { B: 0, W: 0 });
+                            setLastMove(gameData.lastMove || null);
+                            setPassCount(gameData.passCount || 0);
+                            setGameOver(gameData.gameOver || false);
+                            setScoreInfo(gameData.scoreInfo || null);
+                            setTerritoryMap(gameData.territoryMap ? firebaseToBoard(gameData.territoryMap, boardSize) : null);
+
+                            listenToGameUpdates(roomIdToJoin);
+                        } else {
+                            alert('Cette partie est déjà complète!');
+                        }
+                    } else {
+                        alert('Partie introuvable! Vérifiez le code.');
+                    }
+                });
+            };
+
+            const listenToGameUpdates = (roomIdToListen) => {
+                const ref = database.ref('games/' + roomIdToListen);
+                
+                ref.on('value', (snapshot) => {
+                    if (snapshot.exists()) {
+                        const gameData = snapshot.val();
+                        
+                        console.log('📡 Firebase update received');
+                        
+                        if (gameData.board !== undefined) {
+                            const boardSize = gameData.size || 19;
+                            const newBoard = firebaseToBoard(gameData.board, boardSize);
+                            const newPreviousBoard = gameData.previousBoard 
+                                ? firebaseToBoard(gameData.previousBoard, boardSize)
+                                : null;
+                            const newTerritoryMap = gameData.territoryMap
+                                ? firebaseToBoard(gameData.territoryMap, boardSize)
+                                : null;
+                            
+                            setBoard(newBoard);
+                            setPreviousBoard(newPreviousBoard);
+                            setTurn(gameData.turn || 'B');
+                            setCaptures(gameData.captures || { B: 0, W: 0 });
+                            setLastMove(gameData.lastMove || null);
+                            setPassCount(gameData.passCount || 0);
+                            setGameOver(gameData.gameOver || false);
+                            setScoreInfo(gameData.scoreInfo || null);
+                            setTerritoryMap(newTerritoryMap);
+                        }
+                    }
+                });
+            };
+
+            const updateGameState = (newBoard, newPreviousBoard, newTurn, newCaptures, newLastMove, newPassCount) => {
+                if (gameRef.current) {
+                    gameRef.current.update({
+                        board: boardToFirebase(newBoard),
+                        previousBoard: boardToFirebase(newPreviousBoard),
+                        turn: newTurn,
+                        captures: newCaptures,
+                        lastMove: newLastMove,
+                        passCount: newPassCount
+                    });
+                }
+            };
+
+            const endGameOnline = (winner, finalB, finalW, territoryMapData = null) => {
+                if (gameRef.current) {
+                    console.log('🏁 Ending game online:', { winner, finalB, finalW });
+                    gameRef.current.update({
+                        gameOver: true,
+                        scoreInfo: {
+                            winner: winner,
+                            finalB: finalB,
+                            finalW: finalW
+                        },
+                        territoryMap: territoryMapData ? boardToFirebase(territoryMapData) : null
+                    });
+                }
+            };
+
+            useEffect(() => {
+                return () => {
+                    if (gameRef.current) {
+                        gameRef.current.off();
+                    }
+                };
+            }, []);
+
+            const boardsAreEqual = (board1, board2) => {
+                if (!board1 || !board2) return false;
+                if (board1.length !== board2.length) return false;
+                
+                for (let i = 0; i < board1.length; i++) {
+                    for (let j = 0; j < board1[i].length; j++) {
+                        if (board1[i][j] !== board2[i][j]) return false;
+                    }
+                }
+                return true;
+            };
+
+            const resetGame = (newSize) => {
+                const boardSize = newSize || size;
+                setSize(boardSize);
+                setBoard(createEmptyBoard(boardSize));
+                setPreviousBoard(null);
+                setTurn('B');
+                setCaptures({ B: 0, W: 0 });
+                setLastMove(null);
+                setPassCount(0);
+                setGameOver(false);
+                setScoreInfo(null);
+                setTerritoryMap(null);
+                setKoWarning(false);
+
+                if (gameRef.current) {
+                    gameRef.current.off();
+                    gameRef.current = null;
+                }
+                setGameMode('menu');
+                setRoomId('');
+                setInputRoomId('');
+                setPlayerColor(null);
+                setIsConnected(false);
+                setOpponentConnected(false);
+            };
+
+            const getGroup = (x, y, color, currentBoard) => {
+                const group = new Set();
+                const liberties = new Set();
+                const stack = [[x, y]];
+                const key = (i, j) => `${i},${j}`;
+                group.add(key(x, y));
+
+                while (stack.length > 0) {
+                    const [cx, cy] = stack.pop();
+                    [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dx, dy]) => {
+                        const nx = cx + dx, ny = cy + dy;
+                        if (nx >= 0 && nx < size && ny >= 0 && ny < size) {
+                            if (currentBoard[nx][ny] === null) {
+                                liberties.add(key(nx, ny));
+                            } else if (currentBoard[nx][ny] === color && !group.has(key(nx, ny))) {
+                                group.add(key(nx, ny));
+                                stack.push([nx, ny]);
+                            }
+                        }
+                    });
+                }
+                return { group, libertiesCount: liberties.size };
+            };
+
+            const playMove = (x, y) => {
+                if (gameMode === 'online' && turn !== playerColor) {
+                    console.log('❌ Not your turn!');
+                    return;
+                }
+                
+                if (gameOver || !board || board[x][y]) {
+                    console.log('❌ Invalid move');
+                    return;
+                }
+
+                console.log('✅ Playing move:', { x, y, color: turn });
+
+                let newBoard = board.map(row => [...row]);
+                newBoard[x][y] = turn;
+                const opponent = turn === 'B' ? 'W' : 'B';
+                let totalCaptured = 0;
+
+                [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dx, dy]) => {
+                    const nx = x + dx, ny = y + dy;
+                    if (nx >= 0 && nx < size && ny >= 0 && ny < size && newBoard[nx][ny] === opponent) {
+                        const { group, libertiesCount } = getGroup(nx, ny, opponent, newBoard);
+                        if (libertiesCount === 0) {
+                            group.forEach(k => {
+                                const [gx, gy] = k.split(',').map(Number);
+                                if (newBoard[gx][gy] !== null) {
+                                    newBoard[gx][gy] = null;
+                                    totalCaptured++;
+                                }
+                            });
+                        }
+                    }
+                });
+
+                if (getGroup(x, y, turn, newBoard).libertiesCount === 0) {
+                    console.log('❌ Suicide move!');
+                    return;
+                }
+
+                if (boardsAreEqual(newBoard, previousBoard)) {
+                    console.log('⚠️ Ko violation detected!');
+                    setKoWarning(true);
+                    setTimeout(() => setKoWarning(false), 300);
+                    return;
+                }
+
+                const newCaptures = { ...captures, [turn]: captures[turn] + totalCaptured };
+                const newLastMove = {x, y};
+                const newPreviousBoard = board.map(row => [...row]);
+                
+                if (gameMode === 'online') {
+                    console.log('🔄 Updating game state with Ko protection...');
+                    updateGameState(newBoard, newPreviousBoard, opponent, newCaptures, newLastMove, 0);
+                } else {
+                    setPreviousBoard(newPreviousBoard);
+                    setBoard(newBoard);
+                    setCaptures(newCaptures);
+                    setTurn(opponent);
+                    setLastMove(newLastMove);
+                    setPassCount(0);
+                }
+            };
+
+            const handlePass = () => {
+                if (gameMode === 'online' && turn !== playerColor) return;
+
+                if(passCount + 1 >= 2) {
+                    computeFinalScore();
+                } else {
+                    const newTurn = turn === 'B' ? 'W' : 'B';
+                    const newPassCount = passCount + 1;
+                    
+                    if (gameMode === 'online') {
+                        updateGameState(board, null, newTurn, captures, lastMove, newPassCount);
+                    } else {
+                        setPassCount(newPassCount);
+                        setTurn(newTurn);
+                        setPreviousBoard(null);
+                    }
+                }
+            };
+
+            const handleResign = () => {
+                const winner = turn === 'B' ? 'Blanc' : 'Noir';
+                
+                if (gameMode === 'online') {
+                    endGameOnline(winner, '-', '-', null);
+                } else {
+                    setScoreInfo({ winner, finalB: '-', finalW: '-' });
+                    setGameOver(true);
+                }
+            };
+
+            const computeFinalScore = () => {
+                if (!board) return;
+                
+                let map = Array(size).fill(null).map(() => Array(size).fill(null));
+                let visited = new Set();
+                let bTerr = 0, wTerr = 0;
+
+                for (let i = 0; i < size; i++) {
+                    for (let j = 0; j < size; j++) {
+                        if (board[i][j] === null && !visited.has(`${i},${j}`)) {
+                            const area = [], borders = new Set();
+                            const stack = [[i, j]];
+                            visited.add(`${i},${j}`);
+                            while(stack.length > 0) {
+                                const [cx, cy] = stack.pop();
+                                area.push([cx, cy]);
+                                [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dx, dy]) => {
+                                    const nx = cx + dx, ny = cy + dy;
+                                    if (nx >= 0 && nx < size && ny >= 0 && ny < size) {
+                                        if (board[nx][ny] === null) {
+                                            if (!visited.has(`${nx},${ny}`)) {
+                                                visited.add(`${nx},${ny}`);
+                                                stack.push([nx, ny]);
+                                            }
+                                        } else borders.add(board[nx][ny]);
+                                    }
+                                });
+                            }
+                            if (borders.size === 1) {
+                                const owner = borders.has('B') ? 'B' : 'W';
+                                area.forEach(([ax, ay]) => {
+                                    map[ax][ay] = owner;
+                                    owner === 'B' ? bTerr++ : wTerr++;
+                                });
+                            }
+                        }
+                    }
+                }
+                const finalB = bTerr + captures.B;
+                const finalW = wTerr + captures.W + KOMI;
+                const winner = finalB > finalW ? 'Noir' : 'Blanc';
+                
+                if (gameMode === 'online') {
+                    endGameOnline(winner, finalB, finalW, map);
+                } else {
+                    setTerritoryMap(map);
+                    setScoreInfo({ finalB, finalW, winner });
+                    setGameOver(true);
+                }
+            };
+
+            const hoshiPoints = useMemo(() => {
+                if (size === 9) return [[2, 2], [2, 6], [6, 2], [6, 6], [4, 4]];
+                if (size === 13) return [[3, 3], [3, 9], [9, 3], [9, 9], [6, 6]];
+                return [[3, 3], [3, 9], [3, 15], [9, 3], [9, 9], [9, 15], [15, 3], [15, 9], [15, 15]];
+            }, [size]);
+
+            if (gameMode === 'menu') {
+                return (
+                    <div className="flex flex-col items-center justify-center min-h-screen p-4">
+                        <div className="bg-[#262421] p-8 rounded-2xl shadow-2xl max-w-md w-full">
+                            <h1 className="text-4xl font-black text-center mb-2 text-zinc-600 tracking-tighter">GOMASTER</h1>
+                            <p className="text-center text-zinc-500 mb-8 text-sm">Choisissez votre mode de jeu</p>
+                            
+                            <div className="space-y-4">
+                                <button 
+                                    onClick={() => setGameMode('local')}
+                                    className="w-full bg-gradient-to-r from-blue-600 to-blue-700 py-4 rounded-xl font-bold hover:from-blue-500 hover:to-blue-600 transition-all shadow-lg transform hover:scale-105">
+                                    🏠 Partie Locale
+                                    <p className="text-xs opacity-75 font-normal">Deux joueurs sur le même appareil</p>
+                                </button>
+
+                                <button 
+                                    onClick={createOnlineGame}
+                                    className="w-full bg-gradient-to-r from-green-600 to-green-700 py-4 rounded-xl font-bold hover:from-green-500 hover:to-green-600 transition-all shadow-lg transform hover:scale-105">
+                                    🌐 Créer une partie en ligne
+                                    <p className="text-xs opacity-75 font-normal">Jouez avec un ami à distance</p>
+                                </button>
+
+                                <div className="relative">
+                                    <input 
+                                        type="text"
+                                        placeholder="Code de la partie (ex: ABC123)"
+                                        value={inputRoomId}
+                                        onChange={(e) => setInputRoomId(e.target.value.toUpperCase())}
+                                        className="w-full bg-zinc-800 py-3 px-4 rounded-lg text-center font-mono text-lg tracking-wider outline-none focus:ring-2 focus:ring-yellow-500"
+                                        maxLength={6}
+                                    />
+                                </div>
+
+                                <button 
+                                    onClick={() => inputRoomId && joinOnlineGame(inputRoomId)}
+                                    disabled={!inputRoomId}
+                                    className="w-full bg-gradient-to-r from-yellow-600 to-yellow-700 py-4 rounded-xl font-bold hover:from-yellow-500 hover:to-yellow-600 transition-all shadow-lg transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none">
+                                    🚪 Rejoindre une partie
+                                    <p className="text-xs opacity-75 font-normal">Entrez le code ci-dessus</p>
+                                </button>
+                            </div>
+
+                            <div className="mt-8 p-4 bg-zinc-900 rounded-lg text-xs text-zinc-400">
+                                <p className="font-bold mb-2">ℹ️ Comment jouer en ligne ?</p>
+                                <ol className="list-decimal list-inside space-y-1">
+                                    <li>Un joueur crée une partie</li>
+                                    <li>Il partage le code à son ami</li>
+                                    <li>L'ami rejoint avec ce code</li>
+                                    <li>La partie commence!</li>
+                                </ol>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (!board || !Array.isArray(board)) {
+                return (
+                    <div className="flex items-center justify-center min-h-screen">
+                        <div className="text-center">
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500 mx-auto mb-4"></div>
+                            <p className="text-zinc-400">Chargement...</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="flex flex-col items-center p-4 max-w-xl mx-auto">
+                    {gameMode === 'online' && (
+                        <div className="w-full mb-4 bg-gradient-to-r from-purple-900 to-indigo-900 p-4 rounded-xl shadow-lg">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <p className="text-xs text-purple-200">Code de partie</p>
+                                    <p className="text-2xl font-black tracking-widest font-mono">{roomId}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-xs text-purple-200">Vous jouez</p>
+                                    <div className="flex items-center gap-2 justify-end">
+                                        <p className="text-lg font-bold">{playerColor === 'B' ? 'NOIR' : 'BLANC'}</p>
+                                        <div className={`w-6 h-6 rounded-full ${playerColor === 'B' ? 'stone-black' : 'stone-white'}`} />
+                                    </div>
+                                </div>
+                            </div>
+                            {!opponentConnected && (
+                                <p className="text-center text-yellow-300 text-sm mt-2 pulse">
+                                    ⏳ En attente de l'adversaire...
+                                </p>
+                            )}
+                        </div>
+                    )}
+
+                    <div className={`flex justify-between w-full mb-6 bg-[#262421] p-4 rounded-xl shadow-2xl border-b-4 border-zinc-900 ${koWarning ? 'ko-warning' : ''}`}>
+                        <div className={`flex items-center gap-3 p-2 rounded-lg ${turn === 'B' && !gameOver ? 'bg-zinc-700 ring-1 ring-zinc-500' : ''}`}>
+                            <div className="w-10 h-10 stone-black rounded-full" />
+                            <div><p className="font-bold text-sm">NOIR</p><p className="text-xs text-zinc-400">Pris: {captures.B}</p></div>
+                        </div>
+                        <div className="text-center">
+                            <span className="text-2xl font-black text-zinc-600 tracking-tighter">GOMASTER</span>
+                            {gameOver && <p className="text-green-500 font-bold text-xs animate-pulse">PARTIE TERMINÉE</p>}
+                            {koWarning && <p className="text-red-500 font-bold text-xs animate-pulse">⚠️ KO INTERDIT</p>}
+                            {gameMode === 'online' && turn !== playerColor && !gameOver && (
+                                <p className="text-yellow-500 font-bold text-xs pulse">Tour de l'adversaire</p>
+                            )}
+                        </div>
+                        <div className={`flex items-center gap-3 p-2 rounded-lg ${turn === 'W' && !gameOver ? 'bg-zinc-700 ring-1 ring-zinc-500' : ''}`}>
+                            <div className="text-right"><p className="font-bold text-sm">BLANC</p><p className="text-xs text-zinc-400">Pris: {captures.W}</p></div>
+                            <div className="w-10 h-10 stone-white rounded-full" />
+                        </div>
+                    </div>
+
+                    <div className="goban-container" style={{ width: 'min(92vw, 500px)', height: 'min(92vw, 500px)' }}>
+                        {Array.from({length: size}).map((_, i) => (
+                            <React.Fragment key={i}>
+                                <div className="line-h" style={{ top: `${(i + 1) * cellSize}%`, left: `${cellSize}%`, right: `${cellSize}%`, height: '1.5px' }} />
+                                <div className="line-v" style={{ left: `${(i + 1) * cellSize}%`, top: `${cellSize}%`, bottom: `${cellSize}%`, width: '1.5px' }} />
+                            </React.Fragment>
+                        ))}
+                        {hoshiPoints.map(([hx, hy], i) => (
+                            <div key={i} className="hoshi" style={{ left: `${(hx + 1) * cellSize}%`, top: `${(hy + 1) * cellSize}%`, width: '8px', height: '8px' }} />
+                        ))}
+                        
+                        {board.map((row, x) => row.map((cell, y) => cell && (
+                            <div key={`${x}-${y}`} className={`stone ${cell === 'B' ? 'stone-black' : 'stone-white'}`}
+                                style={{ left: `${(x + 1) * cellSize}%`, top: `${(y + 1) * cellSize}%`, width: `${cellSize * 0.92}%`, height: `${cellSize * 0.92}%` }}>
+                                {lastMove?.x === x && lastMove?.y === y && <div className="marker"></div>}
+                            </div>
+                        )))}
+
+                        {territoryMap && board.map((row, x) => row.map((cell, y) => territoryMap[x][y] && !cell && (
+                            <div key={`t-${x}-${y}`} 
+                                className={`territory-marker ${territoryMap[x][y] === 'B' ? 'territory-marker-black' : 'territory-marker-white'}`}
+                                style={{ left: `${(x + 1) * cellSize}%`, top: `${(y + 1) * cellSize}%` }} />
+                        )))}
+
+                        <div className="click-layer" style={{ gridTemplateColumns: `repeat(${size}, 1fr)`, gridTemplateRows: `repeat(${size}, 1fr)`, padding: `${cellSize/2}%` }}>
+                            {Array.from({length: size * size}).map((_, i) => (
+                                <div key={i} onClick={() => playMove(i % size, Math.floor(i / size))} className="w-full h-full cursor-pointer" />
+                            ))}
+                        </div>
+                    </div>
+
+                    {gameOver ? (
+                        <div className="mt-6 p-4 bg-zinc-800 rounded-lg w-full text-center border border-green-900">
+                            <h3 className="text-xl font-bold text-green-400 mb-1">{scoreInfo?.winner} gagne !</h3>
+                            <p className="text-sm text-zinc-300">
+                                Noir: {scoreInfo?.finalB} | Blanc: {typeof scoreInfo?.finalW === 'number' ? scoreInfo.finalW.toFixed(1) : scoreInfo?.finalW} (Komi incl.)
+                            </p>
+                            <button 
+                                onClick={() => resetGame(size)} 
+                                className="mt-4 bg-green-600 px-6 py-2 rounded-full font-bold hover:bg-green-500 transition">
+                                Nouvelle Partie
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="mt-6 flex gap-4 w-full">
+                            <button 
+                                onClick={handlePass}
+                                disabled={gameMode === 'online' && turn !== playerColor}
+                                className="flex-1 bg-zinc-700 py-3 rounded-xl font-bold hover:bg-zinc-600 transition tracking-widest uppercase text-xs disabled:opacity-50 disabled:cursor-not-allowed">
+                                Passe
+                            </button>
+                            <button 
+                                onClick={handleResign}
+                                disabled={gameMode === 'online' && turn !== playerColor}
+                                className="flex-1 bg-red-900/30 text-red-400 py-3 rounded-xl font-bold hover:bg-red-900/50 transition tracking-widest uppercase text-xs border border-red-900/50 disabled:opacity-50 disabled:cursor-not-allowed">
+                                Abandon
+                            </button>
+                        </div>
+                    )}
+
+                    {gameMode === 'local' && (
+                        <div className="mt-8 flex gap-2">
+                            {[9, 13, 19].map(s => (
+                                <button 
+                                    key={s} 
+                                    onClick={() => resetGame(s)} 
+                                    className={`px-4 py-1 rounded-md text-xs font-bold ${size === s ? 'bg-yellow-600 text-black' : 'bg-zinc-800 text-zinc-500'}`}>
+                                    {s}x{s}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    <button 
+                        onClick={() => resetGame(size)}
+                        className="mt-4 bg-zinc-800 px-6 py-2 rounded-full text-xs font-bold hover:bg-zinc-700 transition">
+                        🏠 Retour au menu
+                    </button>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<GoApp />);
+    </script>
+</body>
+</html>
