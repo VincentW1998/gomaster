@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -22,43 +22,17 @@
         .stone-white { background: radial-gradient(circle at 30% 30%, #fff, #bbb); box-shadow: 2px 3px 5px rgba(0,0,0,0.4); }
         .marker { position: absolute; width: 35%; height: 35%; border: 2px solid #ff4b4b; border-radius: 50%; top: 32.5%; left: 32.5%; }
         
-        .territory-marker { 
-            position: absolute; 
-            transform: translate(-50%, -50%); 
-            width: 3%; 
-            height: 3%; 
-            z-index: 6; 
-            opacity: 0.85; 
-            border-radius: 2px;
-        }
-        .territory-marker-black {
-            background-color: #000;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.3);
-        }
-        .territory-marker-white {
-            background-color: #fff;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-            border: 1px solid rgba(0,0,0,0.15);
-        }
+        .territory-marker { position: absolute; transform: translate(-50%, -50%); width: 3%; height: 3%; z-index: 6; opacity: 0.85; border-radius: 2px; }
+        .territory-marker-black { background-color: #000; box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+        .territory-marker-white { background-color: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.2); border: 1px solid rgba(0,0,0,0.15); }
         
         .click-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 20; display: grid; }
         
-        @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-5px); }
-            75% { transform: translateX(5px); }
-        }
-        .ko-warning {
-            animation: shake 0.3s ease-in-out;
-        }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+        .ko-warning { animation: shake 0.3s ease-in-out; }
         
-        .pulse {
-            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
+        .pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     </style>
 </head>
 <body>
@@ -77,28 +51,20 @@
             appId: "1:141900806830:web:dfc36705f535314745cb3f"
         };
 
-        // Initialize Firebase
         let firebaseApp, database;
         try {
             firebaseApp = firebase.initializeApp(firebaseConfig);
             database = firebase.database();
-        } catch (error) {
-            console.log("Firebase not configured:", error);
-        }
+        } catch (error) { console.log("Firebase not configured:", error); }
 
-        const createEmptyBoard = (size) => {
-            return Array(size).fill(null).map(() => Array(size).fill(null));
-        };
+        const createEmptyBoard = (size) => Array(size).fill(null).map(() => Array(size).fill(null));
 
         const boardToFirebase = (board) => {
             if (!board) return null;
             const obj = {};
             board.forEach((row, i) => {
                 row.forEach((cell, j) => {
-                    const key = `x${i}y${j}`;
-                    if (cell !== null) {
-                        obj[key] = cell;
-                    }
+                    if (cell !== null) obj[`x${i}y${j}`] = cell;
                 });
             });
             return Object.keys(obj).length > 0 ? obj : null;
@@ -107,15 +73,11 @@
         const firebaseToBoard = (firebaseObj, size) => {
             const board = createEmptyBoard(size);
             if (!firebaseObj) return board;
-            
             Object.keys(firebaseObj).forEach(key => {
                 const match = key.match(/x(\d+)y(\d+)/);
                 if (match) {
-                    const i = parseInt(match[1]);
-                    const j = parseInt(match[2]);
-                    if (i < size && j < size) {
-                        board[i][j] = firebaseObj[key];
-                    }
+                    const i = parseInt(match[1]), j = parseInt(match[2]);
+                    if (i < size && j < size) board[i][j] = firebaseObj[key];
                 }
             });
             return board;
@@ -141,20 +103,23 @@
             const [isConnected, setIsConnected] = useState(false);
             const [opponentConnected, setOpponentConnected] = useState(false);
             const gameRef = useRef(null);
+            
+            // IA: Nouveaux états pour le mode IA
+            const [aiDifficulty, setAiDifficulty] = useState('medium');
+            const [isAiThinking, setIsAiThinking] = useState(false);
 
             const KOMI = 6.5;
             const cellSize = 100 / (size + 1);
 
-            const generateRoomId = () => {
-                return Math.random().toString(36).substring(2, 8).toUpperCase();
+            const generateRoomId = () => Math.random().toString(36).substring(2, 8).toUpperCase();
+
+            // IA: Logique pour démarrer une partie contre l'IA
+            const startAiGame = () => {
+                resetGame(size, 'ai');
             };
 
             const createOnlineGame = () => {
-                if (!database) {
-                    alert('Firebase n\'est pas configuré! Veuillez ajouter vos identifiants Firebase.');
-                    return;
-                }
-
+                if (!database) { alert('Firebase n\'est pas configuré!'); return; }
                 const newRoomId = generateRoomId();
                 const initialBoard = createEmptyBoard(size);
                 
@@ -171,105 +136,57 @@
 
                 gameRef.current = database.ref('games/' + newRoomId);
                 gameRef.current.set({
-                    board: boardToFirebase(initialBoard),
-                    previousBoard: null,
-                    turn: 'B',
-                    captures: { B: 0, W: 0 },
-                    lastMove: null,
-                    passCount: 0,
-                    size: size,
-                    gameOver: false,
-                    scoreInfo: null,
-                    territoryMap: null,
-                    players: {
-                        black: true,
-                        white: false
-                    },
-                    createdAt: Date.now()
+                    board: boardToFirebase(initialBoard), previousBoard: null, turn: 'B',
+                    captures: { B: 0, W: 0 }, lastMove: null, passCount: 0, size: size,
+                    gameOver: false, scoreInfo: null, territoryMap: null,
+                    players: { black: true, white: false }, createdAt: Date.now()
                 });
 
-                gameRef.current.child('players/white').on('value', (snapshot) => {
-                    setOpponentConnected(snapshot.val() === true);
-                });
-
+                gameRef.current.child('players/white').on('value', (snapshot) => setOpponentConnected(snapshot.val() === true));
                 listenToGameUpdates(newRoomId);
             };
 
             const joinOnlineGame = (roomIdToJoin) => {
-                if (!database) {
-                    alert('Firebase n\'est pas configuré! Veuillez ajouter vos identifiants Firebase.');
-                    return;
-                }
-
-                if (!roomIdToJoin) {
-                    alert('Veuillez entrer un code de partie!');
-                    return;
-                }
+                if (!database) { alert('Firebase n\'est pas configuré!'); return; }
+                if (!roomIdToJoin) { alert('Veuillez entrer un code de partie!'); return; }
 
                 gameRef.current = database.ref('games/' + roomIdToJoin);
-                
                 gameRef.current.once('value', (snapshot) => {
                     if (snapshot.exists()) {
                         const gameData = snapshot.val();
                         if (!gameData.players.white) {
-                            setRoomId(roomIdToJoin);
-                            setPlayerColor('W');
-                            setGameMode('online');
-                            setIsConnected(true);
-                            setOpponentConnected(true);
-
+                            setRoomId(roomIdToJoin); setPlayerColor('W'); setGameMode('online');
+                            setIsConnected(true); setOpponentConnected(true);
                             gameRef.current.child('players/white').set(true);
                             
                             const boardSize = gameData.size || 19;
                             setSize(boardSize);
                             setBoard(firebaseToBoard(gameData.board, boardSize));
                             setPreviousBoard(gameData.previousBoard ? firebaseToBoard(gameData.previousBoard, boardSize) : null);
-                            setTurn(gameData.turn || 'B');
-                            setCaptures(gameData.captures || { B: 0, W: 0 });
-                            setLastMove(gameData.lastMove || null);
-                            setPassCount(gameData.passCount || 0);
-                            setGameOver(gameData.gameOver || false);
-                            setScoreInfo(gameData.scoreInfo || null);
+                            setTurn(gameData.turn || 'B'); setCaptures(gameData.captures || { B: 0, W: 0 });
+                            setLastMove(gameData.lastMove || null); setPassCount(gameData.passCount || 0);
+                            setGameOver(gameData.gameOver || false); setScoreInfo(gameData.scoreInfo || null);
                             setTerritoryMap(gameData.territoryMap ? firebaseToBoard(gameData.territoryMap, boardSize) : null);
 
                             listenToGameUpdates(roomIdToJoin);
-                        } else {
-                            alert('Cette partie est déjà complète!');
-                        }
-                    } else {
-                        alert('Partie introuvable! Vérifiez le code.');
-                    }
+                        } else { alert('Cette partie est déjà complète!'); }
+                    } else { alert('Partie introuvable! Vérifiez le code.'); }
                 });
             };
 
             const listenToGameUpdates = (roomIdToListen) => {
                 const ref = database.ref('games/' + roomIdToListen);
-                
                 ref.on('value', (snapshot) => {
                     if (snapshot.exists()) {
                         const gameData = snapshot.val();
-                        
-                        console.log('📡 Firebase update received');
-                        
                         if (gameData.board !== undefined) {
                             const boardSize = gameData.size || 19;
-                            const newBoard = firebaseToBoard(gameData.board, boardSize);
-                            const newPreviousBoard = gameData.previousBoard 
-                                ? firebaseToBoard(gameData.previousBoard, boardSize)
-                                : null;
-                            const newTerritoryMap = gameData.territoryMap
-                                ? firebaseToBoard(gameData.territoryMap, boardSize)
-                                : null;
-                            
-                            setBoard(newBoard);
-                            setPreviousBoard(newPreviousBoard);
-                            setTurn(gameData.turn || 'B');
-                            setCaptures(gameData.captures || { B: 0, W: 0 });
-                            setLastMove(gameData.lastMove || null);
-                            setPassCount(gameData.passCount || 0);
-                            setGameOver(gameData.gameOver || false);
-                            setScoreInfo(gameData.scoreInfo || null);
-                            setTerritoryMap(newTerritoryMap);
+                            setBoard(firebaseToBoard(gameData.board, boardSize));
+                            setPreviousBoard(gameData.previousBoard ? firebaseToBoard(gameData.previousBoard, boardSize) : null);
+                            setTurn(gameData.turn || 'B'); setCaptures(gameData.captures || { B: 0, W: 0 });
+                            setLastMove(gameData.lastMove || null); setPassCount(gameData.passCount || 0);
+                            setGameOver(gameData.gameOver || false); setScoreInfo(gameData.scoreInfo || null);
+                            setTerritoryMap(gameData.territoryMap ? firebaseToBoard(gameData.territoryMap, boardSize) : null);
                         }
                     }
                 });
@@ -278,52 +195,29 @@
             const updateGameState = (newBoard, newPreviousBoard, newTurn, newCaptures, newLastMove, newPassCount) => {
                 if (gameRef.current) {
                     gameRef.current.update({
-                        board: boardToFirebase(newBoard),
-                        previousBoard: boardToFirebase(newPreviousBoard),
-                        turn: newTurn,
-                        captures: newCaptures,
-                        lastMove: newLastMove,
-                        passCount: newPassCount
+                        board: boardToFirebase(newBoard), previousBoard: boardToFirebase(newPreviousBoard),
+                        turn: newTurn, captures: newCaptures, lastMove: newLastMove, passCount: newPassCount
                     });
                 }
             };
 
             const endGameOnline = (winner, finalB, finalW, territoryMapData = null) => {
                 if (gameRef.current) {
-                    console.log('🏁 Ending game online:', { winner, finalB, finalW });
                     gameRef.current.update({
                         gameOver: true,
-                        scoreInfo: {
-                            winner: winner,
-                            finalB: finalB,
-                            finalW: finalW
-                        },
+                        scoreInfo: { winner, finalB, finalW },
                         territoryMap: territoryMapData ? boardToFirebase(territoryMapData) : null
                     });
                 }
             };
 
             useEffect(() => {
-                return () => {
-                    if (gameRef.current) {
-                        gameRef.current.off();
-                    }
-                };
+                return () => { if (gameRef.current) gameRef.current.off(); };
             }, []);
 
-            const boardsAreEqual = (board1, board2) => {
-                if (!board1 || !board2) return false;
-                if (board1.length !== board2.length) return false;
-                
-                for (let i = 0; i < board1.length; i++) {
-                    for (let j = 0; j < board1[i].length; j++) {
-                        if (board1[i][j] !== board2[i][j]) return false;
-                    }
-                }
-                return true;
-            };
+            const boardsAreEqual = (b1, b2) => b1 && b2 && b1.length === b2.length && b1.every((row, i) => row.every((cell, j) => cell === b2[i][j]));
 
-            const resetGame = (newSize) => {
+            const resetGame = (newSize, newGameMode = 'menu') => {
                 const boardSize = newSize || size;
                 setSize(boardSize);
                 setBoard(createEmptyBoard(boardSize));
@@ -336,31 +230,22 @@
                 setScoreInfo(null);
                 setTerritoryMap(null);
                 setKoWarning(false);
-
-                if (gameRef.current) {
-                    gameRef.current.off();
-                    gameRef.current = null;
+                setIsAiThinking(false);
+                
+                if (newGameMode === 'menu') {
+                    if (gameRef.current) {
+                        gameRef.current.off();
+                        gameRef.current = null;
+                    }
+                    setGameMode('menu');
+                    setRoomId('');
+                    setInputRoomId('');
+                    setPlayerColor(null);
+                    setIsConnected(false);
+                    setOpponentConnected(false);
+                } else {
+                    setGameMode(newGameMode);
                 }
-                setGameMode('menu');
-                setRoomId('');
-                setInputRoomId('');
-                setPlayerColor(null);
-                setIsConnected(false);
-                setOpponentConnected(false);
-            };
-
-            const resetLocalBoard = (newSize) => {
-                setSize(newSize);
-                setBoard(createEmptyBoard(newSize));
-                setPreviousBoard(null);
-                setTurn('B');
-                setCaptures({ B: 0, W: 0 });
-                setLastMove(null);
-                setPassCount(0);
-                setGameOver(false);
-                setScoreInfo(null);
-                setTerritoryMap(null);
-                setKoWarning(false);
             };
 
             const getGroup = (x, y, color, currentBoard) => {
@@ -384,21 +269,134 @@
                         }
                     });
                 }
-                return { group, libertiesCount: liberties.size };
+                return { group, libertiesCount: liberties.size, groupCoords: Array.from(group).map(k => k.split(',').map(Number)) };
             };
 
-            const playMove = (x, y) => {
-                if (gameMode === 'online' && turn !== playerColor) {
-                    console.log('❌ Not your turn!');
-                    return;
-                }
-                
-                if (gameOver || !board || board[x][y]) {
-                    console.log('❌ Invalid move');
-                    return;
+            // IA: Moteur de décision principal de l'IA
+            const findBestMoveForAI = () => {
+                const opponent = 'B';
+                const aiColor = 'W';
+                let possibleMoves = [];
+
+                for (let i = 0; i < size; i++) {
+                    for (let j = 0; j < size; j++) {
+                        if (board[i][j] === null) {
+                            possibleMoves.push({ x: i, y: j, score: 0 });
+                        }
+                    }
                 }
 
-                console.log('✅ Playing move:', { x, y, color: turn });
+                if (possibleMoves.length === 0) return null;
+
+                // IA: Évaluation de chaque coup possible
+                possibleMoves.forEach(move => {
+                    let tempBoard = board.map(row => [...row]);
+                    tempBoard[move.x][move.y] = aiColor;
+                    let capturedStones = 0;
+                    let isSuicide = false;
+
+                    // Offensive: Check for captures
+                    [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dx, dy]) => {
+                        const nx = move.x + dx, ny = move.y + dy;
+                        if (nx >= 0 && nx < size && ny >= 0 && ny < size && tempBoard[nx][ny] === opponent) {
+                            const { group, libertiesCount } = getGroup(nx, ny, opponent, tempBoard);
+                            if (libertiesCount === 0) {
+                                move.score += 100 * group.size; // Priorité à la capture
+                                capturedStones += group.size;
+                            }
+                        }
+                    });
+                    
+                    if (capturedStones > 0) {
+                       const boardAfterCapture = tempBoard.map(r => [...r]);
+                        for(let i=0; i<size; i++) {
+                            for(let j=0; j<size; j++) {
+                                if(boardAfterCapture[i][j] === opponent && getGroup(i, j, opponent, boardAfterCapture).libertiesCount === 0) {
+                                    boardAfterCapture[i][j] = null;
+                                }
+                            }
+                        }
+                        if (getGroup(move.x, move.y, aiColor, boardAfterCapture).libertiesCount === 0) isSuicide = true;
+                    } else {
+                        if (getGroup(move.x, move.y, aiColor, tempBoard).libertiesCount === 0) isSuicide = true;
+                    }
+
+                    if (isSuicide || boardsAreEqual(tempBoard, previousBoard)) {
+                        move.score = -1000; // Ne pas jouer de coup suicide ou ko
+                        return;
+                    }
+
+                    // Defensive: Save own groups
+                    if (aiDifficulty === 'hard') {
+                         [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dx, dy]) => {
+                            const nx = move.x + dx, ny = move.y + dy;
+                            if (nx >= 0 && nx < size && ny >= 0 && ny < size && board[nx][ny] === aiColor) {
+                                const { group, libertiesCount } = getGroup(nx, ny, aiColor, board);
+                                if (libertiesCount === 1) {
+                                    move.score += 80 * group.size; // Haute priorité pour sauver un groupe en atari
+                                }
+                            }
+                        });
+                    }
+
+                    // Offensive: Put opponent groups in atari
+                    [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dx, dy]) => {
+                        const nx = move.x + dx, ny = move.y + dy;
+                        if (nx >= 0 && nx < size && ny >= 0 && ny < size && board[nx][ny] === opponent) {
+                            const { libertiesCount } = getGroup(nx, ny, opponent, board);
+                            if (libertiesCount === 1) {
+                                move.score += 40; // Mettre en atari est un bon coup
+                            }
+                        }
+                    });
+                    
+                    // Positional: Play near other stones
+                    [[0,1],[0,-1],[1,0],[-1,0], [1,1], [1,-1], [-1,1], [-1,-1]].forEach(([dx, dy]) => {
+                        const nx = move.x + dx, ny = move.y + dy;
+                        if (nx >= 0 && nx < size && ny >= 0 && ny < size) {
+                           if(board[nx][ny] === aiColor) move.score += 2; // Connecter ses propres pierres
+                           if(board[nx][ny] === opponent) move.score += 1; // Jouer près de l'adversaire
+                        }
+                    });
+                    
+                    move.score += Math.random(); // Ajouter un peu d'aléatoire pour départager les ex aequo
+                });
+
+                possibleMoves = possibleMoves.filter(move => move.score > -1000);
+                if (possibleMoves.length === 0) return null; // Aucun coup légal, l'IA doit passer
+
+                possibleMoves.sort((a, b) => b.score - a.score);
+                
+                // IA: La difficulté change le choix du coup
+                if (aiDifficulty === 'easy' && Math.random() < 0.6) { // 60% de chance de jouer un coup aléatoire
+                    return possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+                }
+                
+                return possibleMoves[0]; // Joue le meilleur coup
+            };
+            
+            // IA: useEffect pour déclencher le tour de l'IA
+            useEffect(() => {
+                if (gameMode === 'ai' && turn === 'W' && !gameOver && !isAiThinking) {
+                    setIsAiThinking(true);
+                    setTimeout(() => {
+                        const aiMove = findBestMoveForAI();
+                        if (aiMove) {
+                            playMove(aiMove.x, aiMove.y, false);
+                        } else {
+                            handlePass(false); // Si l'IA n'a pas de coup, elle passe
+                        }
+                        setIsAiThinking(false);
+                    }, 1000); // Délai pour simuler la réflexion
+                }
+            }, [turn, gameMode, gameOver, isAiThinking]);
+
+            const playMove = (x, y, isHumanMove = true) => {
+                if (isHumanMove) {
+                    if (gameMode === 'online' && turn !== playerColor) return;
+                    if (gameMode === 'ai' && turn === 'W') return;
+                }
+                if (gameOver || !board || board[x][y]) { return; }
 
                 let newBoard = board.map(row => [...row]);
                 newBoard[x][y] = turn;
@@ -412,22 +410,14 @@
                         if (libertiesCount === 0) {
                             group.forEach(k => {
                                 const [gx, gy] = k.split(',').map(Number);
-                                if (newBoard[gx][gy] !== null) {
-                                    newBoard[gx][gy] = null;
-                                    totalCaptured++;
-                                }
+                                if (newBoard[gx][gy] !== null) { newBoard[gx][gy] = null; totalCaptured++; }
                             });
                         }
                     }
                 });
 
-                if (getGroup(x, y, turn, newBoard).libertiesCount === 0) {
-                    console.log('❌ Suicide move!');
-                    return;
-                }
-
+                if (getGroup(x, y, turn, newBoard).libertiesCount === 0) { return; }
                 if (boardsAreEqual(newBoard, previousBoard)) {
-                    console.log('⚠️ Ko violation detected!');
                     setKoWarning(true);
                     setTimeout(() => setKoWarning(false), 300);
                     return;
@@ -436,22 +426,25 @@
                 const newCaptures = { ...captures, [turn]: captures[turn] + totalCaptured };
                 const newLastMove = {x, y};
                 const newPreviousBoard = board.map(row => [...row]);
+                const newTurn = opponent;
                 
                 if (gameMode === 'online') {
-                    console.log('🔄 Updating game state with Ko protection...');
-                    updateGameState(newBoard, newPreviousBoard, opponent, newCaptures, newLastMove, 0);
+                    updateGameState(newBoard, newPreviousBoard, newTurn, newCaptures, newLastMove, 0);
                 } else {
                     setPreviousBoard(newPreviousBoard);
                     setBoard(newBoard);
                     setCaptures(newCaptures);
-                    setTurn(opponent);
+                    setTurn(newTurn);
                     setLastMove(newLastMove);
                     setPassCount(0);
                 }
             };
 
-            const handlePass = () => {
-                if (gameMode === 'online' && turn !== playerColor) return;
+            const handlePass = (isHumanMove = true) => {
+                if (isHumanMove) {
+                    if (gameMode === 'online' && turn !== playerColor) return;
+                    if (gameMode === 'ai' && turn === 'W') return;
+                }
 
                 if(passCount + 1 >= 2) {
                     computeFinalScore();
@@ -471,7 +464,6 @@
 
             const handleResign = () => {
                 const winner = turn === 'B' ? 'Blanc' : 'Noir';
-                
                 if (gameMode === 'online') {
                     endGameOnline(winner, '-', '-', null);
                 } else {
@@ -545,48 +537,41 @@
                             <p className="text-center text-zinc-500 mb-8 text-sm">Choisissez votre mode de jeu</p>
                             
                             <div className="space-y-4">
-                                <button 
-                                    onClick={() => setGameMode('local')}
-                                    className="w-full bg-gradient-to-r from-blue-600 to-blue-700 py-4 rounded-xl font-bold hover:from-blue-500 hover:to-blue-600 transition-all shadow-lg transform hover:scale-105">
+                                <button onClick={() => resetGame(size, 'local')} className="w-full bg-gradient-to-r from-blue-600 to-blue-700 py-4 rounded-xl font-bold hover:from-blue-500 hover:to-blue-600 transition-all shadow-lg transform hover:scale-105">
                                     🏠 Partie Locale
                                     <p className="text-xs opacity-75 font-normal">Deux joueurs sur le même appareil</p>
                                 </button>
+                                
+                                {/* IA: Nouvelle section pour le mode IA */}
+                                <div className="bg-zinc-800 p-4 rounded-xl">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <h3 className="font-bold text-lg text-purple-300">👤 vs 🤖 Jouer contre l'IA</h3>
+                                        <div className="flex gap-2">
+                                            {['easy', 'medium', 'hard'].map(level => (
+                                                <button key={level} onClick={() => setAiDifficulty(level)} className={`px-3 py-1 text-xs rounded-full font-semibold transition ${aiDifficulty === level ? 'bg-purple-500 text-white' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'}`}>
+                                                    {level.charAt(0).toUpperCase() + level.slice(1)}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <button onClick={startAiGame} className="w-full bg-gradient-to-r from-purple-600 to-indigo-700 py-3 rounded-xl font-bold hover:from-purple-500 hover:to-indigo-600 transition-all shadow-lg transform hover:scale-105">
+                                        Lancer la partie IA
+                                    </button>
+                                </div>
 
-                                <button 
-                                    onClick={createOnlineGame}
-                                    className="w-full bg-gradient-to-r from-green-600 to-green-700 py-4 rounded-xl font-bold hover:from-green-500 hover:to-green-600 transition-all shadow-lg transform hover:scale-105">
+                                <div className="border-t border-zinc-700 my-4"></div>
+
+                                <button onClick={createOnlineGame} className="w-full bg-gradient-to-r from-green-600 to-green-700 py-4 rounded-xl font-bold hover:from-green-500 hover:to-green-600 transition-all shadow-lg transform hover:scale-105">
                                     🌐 Créer une partie en ligne
-                                    <p className="text-xs opacity-75 font-normal">Jouez avec un ami à distance</p>
                                 </button>
 
                                 <div className="relative">
-                                    <input 
-                                        type="text"
-                                        placeholder="Code de la partie (ex: ABC123)"
-                                        value={inputRoomId}
-                                        onChange={(e) => setInputRoomId(e.target.value.toUpperCase())}
-                                        className="w-full bg-zinc-800 py-3 px-4 rounded-lg text-center font-mono text-lg tracking-wider outline-none focus:ring-2 focus:ring-yellow-500"
-                                        maxLength={6}
-                                    />
+                                    <input type="text" placeholder="Code de la partie (ex: ABC123)" value={inputRoomId} onChange={(e) => setInputRoomId(e.target.value.toUpperCase())} className="w-full bg-zinc-800 py-3 px-4 rounded-lg text-center font-mono text-lg tracking-wider outline-none focus:ring-2 focus:ring-yellow-500" maxLength={6}/>
                                 </div>
 
-                                <button 
-                                    onClick={() => inputRoomId && joinOnlineGame(inputRoomId)}
-                                    disabled={!inputRoomId}
-                                    className="w-full bg-gradient-to-r from-yellow-600 to-yellow-700 py-4 rounded-xl font-bold hover:from-yellow-500 hover:to-yellow-600 transition-all shadow-lg transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none">
+                                <button onClick={() => inputRoomId && joinOnlineGame(inputRoomId)} disabled={!inputRoomId} className="w-full bg-gradient-to-r from-yellow-600 to-yellow-700 py-4 rounded-xl font-bold hover:from-yellow-500 hover:to-yellow-600 transition-all shadow-lg transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none">
                                     🚪 Rejoindre une partie
-                                    <p className="text-xs opacity-75 font-normal">Entrez le code ci-dessus</p>
                                 </button>
-                            </div>
-
-                            <div className="mt-8 p-4 bg-zinc-900 rounded-lg text-xs text-zinc-400">
-                                <p className="font-bold mb-2">ℹ️ Comment jouer en ligne ?</p>
-                                <ol className="list-decimal list-inside space-y-1">
-                                    <li>Un joueur crée une partie</li>
-                                    <li>Il partage le code à son ami</li>
-                                    <li>L'ami rejoint avec ce code</li>
-                                    <li>La partie commence!</li>
-                                </ol>
                             </div>
                         </div>
                     </div>
@@ -632,18 +617,20 @@
                     <div className={`flex justify-between w-full mb-6 bg-[#262421] p-4 rounded-xl shadow-2xl border-b-4 border-zinc-900 ${koWarning ? 'ko-warning' : ''}`}>
                         <div className={`flex items-center gap-3 p-2 rounded-lg ${turn === 'B' && !gameOver ? 'bg-zinc-700 ring-1 ring-zinc-500' : ''}`}>
                             <div className="w-10 h-10 stone-black rounded-full" />
-                            <div><p className="font-bold text-sm">NOIR</p><p className="text-xs text-zinc-400">Pris: {captures.B}</p></div>
+                            <div><p className="font-bold text-sm">JOUEUR</p><p className="text-xs text-zinc-400">Pris: {captures.B}</p></div>
                         </div>
                         <div className="text-center">
                             <span className="text-2xl font-black text-zinc-600 tracking-tighter">GOMASTER</span>
                             {gameOver && <p className="text-green-500 font-bold text-xs animate-pulse">PARTIE TERMINÉE</p>}
                             {koWarning && <p className="text-red-500 font-bold text-xs animate-pulse">⚠️ KO INTERDIT</p>}
-                            {gameMode === 'online' && turn !== playerColor && !gameOver && (
-                                <p className="text-yellow-500 font-bold text-xs pulse">Tour de l'adversaire</p>
-                            )}
+                            {/* IA: Message pendant la réflexion de l'IA */}
+                            {isAiThinking && <p className="text-yellow-500 font-bold text-xs pulse">🤖 L'IA réfléchit...</p>}
                         </div>
                         <div className={`flex items-center gap-3 p-2 rounded-lg ${turn === 'W' && !gameOver ? 'bg-zinc-700 ring-1 ring-zinc-500' : ''}`}>
-                            <div className="text-right"><p className="font-bold text-sm">BLANC</p><p className="text-xs text-zinc-400">Pris: {captures.W}</p></div>
+                            <div className="text-right">
+                                <p className="font-bold text-sm">{gameMode === 'ai' ? 'IA' : 'BLANC'}</p>
+                                <p className="text-xs text-zinc-400">Pris: {captures.W}</p>
+                            </div>
                             <div className="w-10 h-10 stone-white rounded-full" />
                         </div>
                     </div>
@@ -674,7 +661,7 @@
 
                         <div className="click-layer" style={{ gridTemplateColumns: `repeat(${size}, 1fr)`, gridTemplateRows: `repeat(${size}, 1fr)`, padding: `${cellSize/2}%` }}>
                             {Array.from({length: size * size}).map((_, i) => (
-                                <div key={i} onClick={() => playMove(i % size, Math.floor(i / size))} className="w-full h-full cursor-pointer" />
+                                <div key={i} onClick={() => playMove(i % size, Math.floor(i / size), true)} className="w-full h-full cursor-pointer" />
                             ))}
                         </div>
                     </div>
@@ -683,47 +670,34 @@
                         <div className="mt-6 p-4 bg-zinc-800 rounded-lg w-full text-center border border-green-900">
                             <h3 className="text-xl font-bold text-green-400 mb-1">{scoreInfo?.winner} gagne !</h3>
                             <p className="text-sm text-zinc-300">
-                                Noir: {scoreInfo?.finalB} | Blanc: {typeof scoreInfo?.finalW === 'number' ? scoreInfo.finalW.toFixed(1) : scoreInfo?.finalW} (Komi incl.)
+                                Joueur: {scoreInfo?.finalB} | IA: {typeof scoreInfo?.finalW === 'number' ? scoreInfo.finalW.toFixed(1) : scoreInfo?.finalW} (Komi incl.)
                             </p>
-                            <button 
-                                onClick={() => resetGame(size)} 
-                                className="mt-4 bg-green-600 px-6 py-2 rounded-full font-bold hover:bg-green-500 transition">
-                                Nouvelle Partie
+                            <button onClick={() => resetGame(size, gameMode)} className="mt-4 bg-green-600 px-6 py-2 rounded-full font-bold hover:bg-green-500 transition">
+                                Rejouer
                             </button>
                         </div>
                     ) : (
                         <div className="mt-6 flex gap-4 w-full">
-                            <button 
-                                onClick={handlePass}
-                                disabled={gameMode === 'online' && turn !== playerColor}
-                                className="flex-1 bg-zinc-700 py-3 rounded-xl font-bold hover:bg-zinc-600 transition tracking-widest uppercase text-xs disabled:opacity-50 disabled:cursor-not-allowed">
+                            <button onClick={() => handlePass(true)} disabled={(gameMode === 'online' && turn !== playerColor) || (gameMode === 'ai' && turn === 'W')} className="flex-1 bg-zinc-700 py-3 rounded-xl font-bold hover:bg-zinc-600 transition tracking-widest uppercase text-xs disabled:opacity-50 disabled:cursor-not-allowed">
                                 Passe
                             </button>
-                            <button 
-                                onClick={handleResign}
-                                disabled={gameMode === 'online' && turn !== playerColor}
-                                className="flex-1 bg-red-900/30 text-red-400 py-3 rounded-xl font-bold hover:bg-red-900/50 transition tracking-widest uppercase text-xs border border-red-900/50 disabled:opacity-50 disabled:cursor-not-allowed">
+                            <button onClick={handleResign} disabled={(gameMode === 'online' && turn !== playerColor) || (gameMode === 'ai' && turn === 'W')} className="flex-1 bg-red-900/30 text-red-400 py-3 rounded-xl font-bold hover:bg-red-900/50 transition tracking-widest uppercase text-xs border border-red-900/50 disabled:opacity-50 disabled:cursor-not-allowed">
                                 Abandon
                             </button>
                         </div>
                     )}
 
-                    {gameMode === 'local' && (
+                     {gameMode !== 'online' && (
                         <div className="mt-8 flex gap-2">
                             {[9, 13, 19].map(s => (
-                                <button 
-                                    key={s} 
-                                    onClick={() => resetLocalBoard(s)} 
-                                    className={`px-4 py-1 rounded-md text-xs font-bold ${size === s ? 'bg-yellow-600 text-black' : 'bg-zinc-800 text-zinc-500'}`}>
+                                <button key={s} onClick={() => resetGame(s, gameMode)} className={`px-4 py-1 rounded-md text-xs font-bold ${size === s ? 'bg-yellow-600 text-black' : 'bg-zinc-800 text-zinc-500'}`}>
                                     {s}x{s}
                                 </button>
                             ))}
                         </div>
                     )}
 
-                    <button 
-                        onClick={() => resetGame(size)}
-                        className="mt-4 bg-zinc-800 px-6 py-2 rounded-full text-xs font-bold hover:bg-zinc-700 transition">
+                    <button onClick={() => resetGame(size)} className="mt-4 bg-zinc-800 px-6 py-2 rounded-full text-xs font-bold hover:bg-zinc-700 transition">
                         🏠 Retour au menu
                     </button>
                 </div>
