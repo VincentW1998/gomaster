@@ -349,6 +349,20 @@
                 setOpponentConnected(false);
             };
 
+            const resetLocalBoard = (newSize) => {
+                setSize(newSize);
+                setBoard(createEmptyBoard(newSize));
+                setPreviousBoard(null);
+                setTurn('B');
+                setCaptures({ B: 0, W: 0 });
+                setLastMove(null);
+                setPassCount(0);
+                setGameOver(false);
+                setScoreInfo(null);
+                setTerritoryMap(null);
+                setKoWarning(false);
+            };
+
             const getGroup = (x, y, color, currentBoard) => {
                 const group = new Set();
                 const liberties = new Set();
@@ -527,7 +541,7 @@
                 return (
                     <div className="flex flex-col items-center justify-center min-h-screen p-4">
                         <div className="bg-[#262421] p-8 rounded-2xl shadow-2xl max-w-md w-full">
-                            <h1 className="text-4xl font-black text-center mb-2 text-zinc-600 tracking-tighter">GOMASTER test</h1>
+                            <h1 className="text-4xl font-black text-center mb-2 text-zinc-600 tracking-tighter">GOMASTER</h1>
                             <p className="text-center text-zinc-500 mb-8 text-sm">Choisissez votre mode de jeu</p>
                             
                             <div className="space-y-4">
@@ -699,7 +713,7 @@
                             {[9, 13, 19].map(s => (
                                 <button 
                                     key={s} 
-                                    onClick={() => resetGame(s)} 
+                                    onClick={() => resetLocalBoard(s)} 
                                     className={`px-4 py-1 rounded-md text-xs font-bold ${size === s ? 'bg-yellow-600 text-black' : 'bg-zinc-800 text-zinc-500'}`}>
                                     {s}x{s}
                                 </button>
